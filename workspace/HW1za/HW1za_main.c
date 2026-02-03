@@ -40,6 +40,17 @@ extern uint32_t numRXA;
 uint16_t UARTPrint = 0;
 uint16_t LEDdisplaynum = 0;
 
+float saturate(float input, float saturation_limit)
+{
+    if (input > saturation_limit) {
+        return saturation_limit;
+    } else if (input < -saturation_limit) {
+        return -saturation_limit;
+    } else {
+        return input;
+    }
+}
+
 
 void main(void)
 {
@@ -248,7 +259,7 @@ void main(void)
     // 200MHz CPU Freq,                       Period (in uSeconds)
     ConfigCpuTimer(&CpuTimer0, LAUNCHPAD_CPU_FREQUENCY, 10000);
     ConfigCpuTimer(&CpuTimer1, LAUNCHPAD_CPU_FREQUENCY, 20000);
-    ConfigCpuTimer(&CpuTimer2, LAUNCHPAD_CPU_FREQUENCY, 40000);
+    ConfigCpuTimer(&CpuTimer2, LAUNCHPAD_CPU_FREQUENCY, 5000); // Set Timer2 period to 5 ms so serial_printf occurs every 250 ms
 
     // Enable CpuTimer Interrupt bit TIE
     CpuTimer0Regs.TCR.all = 0x4000;
@@ -285,7 +296,7 @@ void main(void)
     {
         if (UARTPrint == 1 ) {
 				serial_printf(&SerialA,"Num Timer2:%ld Num SerialRX: %ld\r\n",CpuTimer2.InterruptCount,numRXA);
-            UARTPrint = 0;
+            UARTPrint = 0; // Clear flag so we print only once per timer-trigger; otherwise while(1) would print repeatedly and ruin periodic rate
         }
     }
 }
