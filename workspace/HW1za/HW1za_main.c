@@ -40,6 +40,20 @@ extern uint32_t numRXA;
 uint16_t UARTPrint = 0;
 uint16_t LEDdisplaynum = 0;
 
+// Exercise 8: sine wave saturation globals
+float sinvalue = 0.0;
+float time = 0.0;
+float ampl = 3.0;
+float frequency = 0.05;
+float offset = 0.25;
+int32_t timeint = 0;
+float satvalue = 0.0;
+
+volatile uint16_t chase_step = 1;   // 1..3 for LED1..LED3 (or 1..5 if you want)
+
+
+
+
 float saturate(float input, float saturation_limit)
 {
     if (input > saturation_limit) {
@@ -295,7 +309,32 @@ void main(void)
     while(1)
     {
         if (UARTPrint == 1 ) {
-				serial_printf(&SerialA,"Num Timer2:%ld Num SerialRX: %ld\r\n",CpuTimer2.InterruptCount,numRXA);
+//				serial_printf(&SerialA,"Num Timer2:%ld Num SerialRX: %ld\r\n",CpuTimer2.InterruptCount,numRXA);
+
+//				float test_in1 = 3.4;
+//				float test_in2 = 9.5;
+//				float test_in3 = -7.4;
+//				float limit = 5.5;
+//
+//				serial_printf(&SerialA,
+//				    "in=%.1f out=%.1f | in=%.1f out=%.1f | in=%.1f out=%.1f\r\n",
+//				    test_in1, saturate(test_in1, limit),
+//				    test_in2, saturate(test_in2, limit),
+//				    test_in3, saturate(test_in3, limit));
+
+				timeint = timeint + 1;
+				time = timeint * 0.25;
+				sinvalue = ampl * sin(2 * PI * frequency * time) + offset;
+
+				satvalue = saturate(sinvalue, 2.65);
+
+				serial_printf(&SerialA,
+				    "Timeint = %ld, Time = %.2fsec, Input = %.3f, SatOut = %.2f\r\n",
+				    timeint, time, sinvalue, satvalue);
+
+
+
+
             UARTPrint = 0; // Clear flag so we print only once per timer-trigger; otherwise while(1) would print repeatedly and ruin periodic rate
         }
     }
@@ -333,13 +372,13 @@ __interrupt void cpu_timer0_isr(void)
 //        PieCtrlRegs.PIEIFR12.bit.INTx9 = 1;  // Manually cause the interrupt for the SWI
 //    }
 
-    if ((numTimer0calls%250) == 0) {
-        displayLEDletter(LEDdisplaynum);
-        LEDdisplaynum++;
-        if (LEDdisplaynum == 0xFFFF) {  // prevent roll over exception
-            LEDdisplaynum = 0;
-        }
-    }
+//    if ((numTimer0calls%250) == 0) {
+//        displayLEDletter(LEDdisplaynum);
+//        LEDdisplaynum++;
+//        if (LEDdisplaynum == 0xFFFF) {  // prevent roll over exception
+//            LEDdisplaynum = 0;
+//        }
+//    }
 
 	// Blink LaunchPad Red LED
     GpioDataRegs.GPBTOGGLE.bit.GPIO34 = 1;
@@ -359,14 +398,59 @@ __interrupt void cpu_timer1_isr(void)
 // cpu_timer2_isr CPU Timer2 ISR
 __interrupt void cpu_timer2_isr(void)
 {
-	
-	
-	// Blink LaunchPad Blue LED
+    // Blink LaunchPad Blue LED
     GpioDataRegs.GPATOGGLE.bit.GPIO31 = 1;
 
     CpuTimer2.InterruptCount++;
-	
-	if ((CpuTimer2.InterruptCount % 50) == 0) {
-		UARTPrint = 1;
-	}
+
+    // Timer2 period is 5 ms (ConfigCpuTimer(..., 5000 us))
+    // 100 ms / 5 ms = 20 interrupts
+    if ((CpuTimer2.InterruptCount % 20) == 0) {
+        // Toggle LED10 (GPIO27, GPA) and LED11 (GPIO60, GPB) every 100 ms
+        GpioDataRegs.GPATOGGLE.bit.GPIO27 = 1;  // LED10
+        GpioDataRegs.GPBTOGGLE.bit.GPIO60 = 1;  // LED11
+
+        // Turn OFF LED1–LED5
+        GpioDataRegs.GPASET.bit.GPIO22  = 1;  // LED1 off
+        GpioDataRegs.GPCSET.bit.GPIO94  = 1;  // LED2 off
+        GpioDataRegs.GPCSET.bit.GPIO95  = 1;  // LED3 off
+        GpioDataRegs.GPDSET.bit.GPIO97  = 1;  // LED4 off
+        GpioDataRegs.GPDSET.bit.GPIO111 = 1;  // LED5 off
+
+        // Turn ON exactly one LED
+        if (chase_step == 1) {
+            GpioDataRegs.GPACLEAR.bit.GPIO22 = 1;   // LED1 on
+        } else if (chase_step == 2) {
+            GpioDataRegs.GPCCLEAR.bit.GPIO94 = 1;   // LED2 on
+        } else if (chase_step == 3) {
+            GpioDataRegs.GPCCLEAR.bit.GPIO95 = 1;   // LED3 on
+        } else if (chase_step == 4) {
+            GpioDataRegs.GPDCLEAR.bit.GPIO97 = 1;   // LED4 on
+        } else { // chase_step == 5
+            GpioDataRegs.GPDCLEAR.bit.GPIO111 = 1;  // LED5 on
+        }
+
+        // Advance chase
+        chase_step++;
+        if (chase_step > 5) {
+            chase_step = 1;
+        }
+    }
+
+    // Pushbuttons are pull-up inputs: pressed = 0, not pressed = 1
+    if (GpioDataRegs.GPADAT.bit.GPIO4 == 0) {   // PB1 pressed
+        GpioDataRegs.GPBTOGGLE.bit.GPIO61 = 1;  // LED12 (GPIO61)
+        GpioDataRegs.GPETOGGLE.bit.GPIO157 = 1; // LED13 (GPIO157)
+    }
+
+    if (GpioDataRegs.GPADAT.bit.GPIO7 == 0) {   // PB4 pressed
+        GpioDataRegs.GPETOGGLE.bit.GPIO158 = 1; // LED14 (GPIO158)
+        GpioDataRegs.GPETOGGLE.bit.GPIO159 = 1; // LED15 (GPIO159)
+    }
+
+    // Keep your UARTPrint trigger (every 250 ms = 50 * 5 ms)
+    if ((CpuTimer2.InterruptCount % 50) == 0) {
+        UARTPrint = 1;
+    }
+
 }
